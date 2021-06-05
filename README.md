@@ -9,7 +9,7 @@ this program can be tested in the debug consol available in crome browser.
 
 
 How to execute sample program.
-prerequisite : generate API key at the google cloud platform
+prerequisite : generate API key at the google cloud platform (https://console.cloud.google.com/apis/library?project=arched-memory-315311&folder&organizationId)
 YouTube API, 
   update the code with your API key (ex : var key = "xxxxxxxxxx")
   execute index.html
