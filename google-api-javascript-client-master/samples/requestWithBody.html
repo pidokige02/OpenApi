@@ -1,117 +1,127 @@
-<!--
-  Copyright (c) 2011 Google Inc.
-
-  Licensed under the Apache License, Version 2.0 (the "License"); you may not
-  use this file except in compliance with the License. You may obtain a copy of
-  the License at
-
-  http://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-  License for the specific language governing permissions and limitations under
-  the License.
-
-  To run this sample, replace "apiKey" and "clientId" with your own values.
-  They can be found at https://code.google.com/apis/console/?api=calendar under API Access.
--->
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset='utf-8' />
-    <title>JS Client with Request Body Sample</title>
-    <style>
-      #info {
-        border: 1px solid black;
-        padding: 0.25em;
-        margin: 0.5em 0;
+<head>
+  <meta charset='utf-8' />
+  <title>Google Calendar API with New Identity Services</title>
+  <style>
+    #info {
+      border: 1px solid black;
+      padding: 0.25em;
+      margin: 0.5em 0;
+    }
+  </style>
+  <!-- Load Google Identity Services client -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+  <script>
+    var clientId;
+    var apiKey;
+    var scopes = 'https://www.googleapis.com/auth/calendar';
+    var tokenClient;
+    var accessToken = null;
+
+    // The Calendar event resource to create
+    var resource = {
+      "summary": "Appointment",
+      "location": "Somewhere",
+      "start": {
+        "dateTime": "2024-10-05T10:00:00.000+09:00"
+      },
+      "end": {
+        "dateTime": "2024-10-05T10:25:00.000+09:00"
       }
-    </style>
-    <script>
-      // Enter the API key from the Google Develoepr Console - to handle any unauthenticated
-      // requests in the code.
-      // The provided key works for this sample only when run from
-      // https://google-api-javascript-client.googlecode.com/hg/samples/rpcRequestBody.html
-      // To use in your own application, replace this API key with your own.
-      var apiKey = 'AIzaSyAdjHPT5Pb7Nu56WJ_nlrMGOAgUAtKjiPM';
+    };
 
-      // Enter a client ID for a web application from the Google Developer Console.
-      // The provided clientId will only work if the sample is run directly from
-      // https://google-api-javascript-client.googlecode.com/hg/samples/rpcRequestBody.html
-      // In your Developer Console project, add a JavaScript origin that corresponds to the domain
-      // where you will be running the script.
-      var clientId = '837050751313';
+    // 서버에서 secrets(apiKey, clientId)를 가져옴
+    async function fetchSecrets() {
+        try {
+            const response = await fetch('http://localhost:3001/api/secrets');
+            const secrets = await response.json();
+            clientId = secrets.clientId;
+            apiKey = secrets.apiKey;
 
-      var scopes = 'https://www.googleapis.com/auth/calendar';
+            console.log('Secrets fetched:', clientId, apiKey);
+            // secrets을 가져온 후에 gapi 클라이언트를 초기화
+            gapi.load('client', initClient);
 
-      // The Calendar entry to create
-      var resource = {
-        "summary": "Appointment",
-        "location": "Somewhere",
-        "start": {
-          "dateTime": "2011-12-16T10:00:00.000-07:00"
-        },
-        "end": {
-          "dateTime": "2011-12-16T10:25:00.000-07:00"
+        } catch (error) {
+            console.error('Error fetching secrets:', error);
+            document.getElementById('info').innerText = 'Error fetching API credentials.';
         }
-      };
+    }
 
-      function handleClientLoad() {
-        gapi.load('client', initClient);
-      }
-
-      function initClient() {
-        gapi.client.init({
-          apiKey: apiKey,
-          clientId: clientId,
-          scope: scopes
-        }).then();
-      }
-
-      function signIn() {
-        gapi.auth2.getAuthInstance().signIn();
-      }
-
-      function makeRequest() {
-        gapi.client.request({
-          'path': '/calendar/v3/calendars/primary/events',
-          'method': 'POST',
-          'body': resource
-        }).then(function(resp) {
-          writeResponse(resp.result);
+    function initClient() {
+      gapi.client.init({
+        apiKey: apiKey
+      }).then(function() {
+        tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: scopes,
+          callback: (response) => {
+            if (response.error !== undefined) {
+              console.error("Error obtaining access token:", response);
+              return;
+            }
+            accessToken = response.access_token;
+            makeRequest();
+          }
         });
+      });
+    }
+
+
+    function signIn() {
+      tokenClient.requestAccessToken({ prompt: 'consent' });
+    }
+
+    // Make a request to create a Google Calendar event
+    function makeRequest() {
+      if (!accessToken) {
+        console.log("Access token is missing. User needs to sign in.");
+        return;
       }
 
-      function writeResponse(response) {
-        console.log(response);
-        var creator = response.creator.email;
-        var calendarEntry = response.htmlLink;
-        var infoDiv = document.getElementById('info');
-        var infoMsg = document.createElement('P');
-        infoMsg.appendChild(document.createTextNode('Calendar entry ' +
-            'successfully created by ' + creator));
-        infoDiv.appendChild(infoMsg);
-        var entryLink = document.createElement('A');
-        entryLink.href = calendarEntry;
-        entryLink.appendChild(
-            document.createTextNode('View the Calendar entry'));
-        infoDiv.appendChild(entryLink);
-      }
-    </script>
-    <script async defer src="https://apis.google.com/js/api.js"
-      onload="this.onload=function(){};handleClientLoad();"
-      onreadystatechange="if (this.readyState === 'complete') this.onload();">
-    </script>
-  </head>
-  <body>
-    <p>
-      This sample creates a Calendar entry for the logged-in user on Friday, 
-      December 16, 2011 from 10:00 to 10:25. The entry will not be saved unless
-      you click through to the Calendar entry and save it.
-    </p>
-    <button id="rpc" onclick="signIn();">Sign in</button>
-    <button id="rest" onclick="makeRequest();">Make Request</button>
-    <div id="info"></div>
-  </body>
+      gapi.client.request({
+        'path': '/calendar/v3/calendars/primary/events',
+        'method': 'POST',
+        'body': resource
+      }).then(function(resp) {
+        writeResponse(resp.result);
+      }, function(error) {
+        console.error("Error creating calendar event: ", error);
+      });
+    }
+
+    // Display the response after the calendar event is created
+    function writeResponse(response) {
+      console.log(response);
+      var creator = response.creator.email;
+      var calendarEntry = response.htmlLink;
+      var infoDiv = document.getElementById('info');
+      var infoMsg = document.createElement('P');
+      infoMsg.appendChild(document.createTextNode('Calendar entry successfully created by ' + creator));
+      infoDiv.appendChild(infoMsg);
+      var entryLink = document.createElement('A');
+      entryLink.href = calendarEntry;
+      entryLink.appendChild(document.createTextNode('View the Calendar entry'));
+      infoDiv.appendChild(entryLink);
+    }
+
+    window.onload = fetchSecrets;
+
+  </script>
+
+  <script src="https://apis.google.com/js/api.js"></script>
+
+</head>
+
+<body>
+  <p>
+    This sample creates a Calendar entry for the logged-in user on
+    Saturday, Oct 5, 2024, from 10:00 to 10:25.
+  </p>
+  <button id="rpc" onclick="signIn();">Sign in</button>
+  <button id="rest" onclick="makeRequest();">Make Request</button>
+  <div id="info"></div>
+</body>
 </html>

@@ -1,109 +1,164 @@
-<!--
-  Copyright (c) 2011 Google Inc.
-
-  Licensed under the Apache License, Version 2.0 (the "License"); you may not
-  use this file except in compliance with the License. You may obtain a copy of
-  the License at
-
-  http://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-  License for the specific language governing permissions and limitations under
-  the License.
-
-  To run this sample, replace YOUR API KEY with your application's API key.
-  It can be found at https://code.google.com/apis/console/?api=plus under API Access.
--->
 <!DOCTYPE html>
 <html>
-  <head>
+<head>
     <meta charset='utf-8' />
-    <script>
-      // Enter the API key from the Google Develoepr Console - to handle any unauthenticated
-      // requests in the code.
-      // The provided key works for this sample only when run from
-      // https://google-api-javascript-client.googlecode.com/hg/samples/plusProfileSearch.html
-      // To use in your own application, replace this API key with your own.
-      var apiKey = 'AIzaSyAdjHPT5Pb7Nu56WJ_nlrMGOAgUAtKjiPM';
+    <title>Google People API Search</title>
 
-      function handleClientLoad() {
-          gapi.load('client', initClient);
-      }
+    <script type="text/javascript">
+        var tokenClient;
+        var apiKey; // replace with your API key
+        var CLIENT_ID; // replace with your client ID
+        var DISCOVERY_DOCS = ["https://people.googleapis.com/$discovery/rest?version=v1"];
+        var SCOPES = "https://www.googleapis.com/auth/contacts.readonly";
 
-      function initClient() {
-        gapi.client.init({
-          apiKey: apiKey,
-          discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/plus/v1/rest']
-        }).then(showSearch)
-      }
+    // 서버에서 secrets(apiKey, clientId)를 가져옴
+        async function fetchSecrets() {
+            try {
+                const response = await fetch('http://localhost:3001/api/secrets');
+                const secrets = await response.json();
+                CLIENT_ID = secrets.clientId;
+                apiKey = secrets.apiKey;
 
-      function showSearch() {
-        document.getElementById('queryFields').style.display = '';
-      }
+                console.log('Secrets fetched:', CLIENT_ID, apiKey);
+                // secrets을 가져온 후에 gapi 클라이언트를 초기화
+                gapi.load('client', initClient);
 
-      // Request smaller images from photos to save bandwidth
-      function resizeImage(imageUrl) {
-        var lastSlash = imageUrl.lastIndexOf('/');
-        var resizedUrl = imageUrl.substring(0, lastSlash) + '/w256' +
-            imageUrl.substr(lastSlash);
-        return resizedUrl;
-      }
-
-      function makeRequest() {
-        function writeResponse(resp) {
-          var infoDiv = document.getElementById('info');
-          infoDiv.innerHTML = '';
-          if (!resp.items) { return; }
-          var responseTitle = document.createElement('strong');
-          responseTitle.appendChild(
-              document.createTextNode('Profiles results for ' + query + ':'));
-          infoDiv.appendChild(responseTitle);
-
-          for (var i = 0; i < resp.items.length ; i++) {
-            var profileResult = resp.items[i];
-            var profileInfo = document.createElement('P');
-
-            if (profileResult.image && profileResult.image.url) {
-              var profilePic = document.createElement('IMG');
-              profilePic.src = resizeImage(profileResult.image.url);
-              profileInfo.appendChild(profilePic);
+            } catch (error) {
+                console.error('Error fetching secrets:', error);
+                document.getElementById('info').innerText = 'Error fetching API credentials.';
             }
-
-            var profileLink = document.createElement('A');
-            profileLink.style.marginLeft = '5px';
-            profileLink.href = profileResult.url;
-            profileLink.appendChild(
-                document.createTextNode(profileResult.displayName));
-            profileInfo.appendChild(profileLink);
-
-            infoDiv.appendChild(profileInfo);
-          }
         }
 
-        var query = document.getElementById('query').value;
-        var request = gapi.client.plus.people.search({
-          'query': query
-        });
-        request.execute(writeResponse);
-      }
-    </script>
-    <script async defer src="https://apis.google.com/js/api.js"
-      onload="this.onload=function(){};handleClientLoad();"
-      onreadystatechange="if (this.readyState === 'complete') this.onload();">
-    </script>
-  </head>
+        function initClient() {
+            gapi.client.init({
+                apiKey: apiKey,
+                discoveryDocs: DISCOVERY_DOCS,
+            }).then(function () {
+                tokenClient = google.accounts.oauth2.initTokenClient({
+                    client_id: CLIENT_ID,
+                    scope: SCOPES,
+                    callback: '' // specify your callback function here
+                });
+                document.getElementById('authorize_button').style.display = 'block';
+            });
+        }
 
-  <body>
-    <p>Enter a query to search Google+ Profiles</p>
+        function handleAuthClick() {
+            tokenClient.callback = async (response) => {
+                if (response.error !== undefined) {
+                    console.error("Error during token request:", response);
+                    throw (response);
+                }
+                document.getElementById('authorize_button').style.display = 'none';
+                document.getElementById('signout_button').style.display = 'block';
+                document.getElementById('queryFields').style.display = '';
+                console.log("Access token received: ", response.access_token);
+                checkAccessToken(response.access_token);
+                console.log("User is signed in, search available!");
+            };
+
+            // 사용자 동의 프롬프트 표시
+            tokenClient.requestAccessToken({prompt: 'consent'});
+        }
+
+        function checkAccessToken(accessToken) {
+            fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${accessToken}`)
+                .then(response => response.json())
+                .then(data => {
+                    console.log("Token Info: ", data);
+
+                    if (data.scope && data.scope.includes('https://www.googleapis.com/auth/contacts.readonly')) {
+                        console.log("User has contact read access");
+                    } else {
+                        console.log("User does not have contact read access");
+                    }
+                })
+                .catch(error => {
+                    console.error("Error checking token:", error);
+                });
+        }
+
+        function handleSignoutClick() {
+            google.accounts.oauth2.revoke(tokenClient.token, () => {
+                document.getElementById('authorize_button').style.display = 'block';
+                document.getElementById('signout_button').style.display = 'none';
+                document.getElementById('queryFields').style.display = 'none';
+                console.log("User is signed out.");
+            });
+        }
+
+        function makeRequest() {
+            console.log("makeRequest function is called!");
+
+            var query = document.getElementById('query').value;
+            console.log("Query: ", query);
+
+            gapi.client.people.people.searchContacts({
+                query: query,
+                pageSize: 5,
+                readMask: 'names,emailAddresses'
+            }).then(function (response) {
+                console.log("API Response: ", response.result); // API 응답 확인
+                writeResponse(response.result);
+            }).catch(function (error) {
+                console.error("Error making request: ", error);
+            });
+        }
+
+        function writeResponse(resp) {
+            console.log("writeResponse is called!", resp);
+            var infoDiv = document.getElementById('info');
+            infoDiv.innerHTML = '';
+
+            if (!resp.results || resp.results.length === 0) {
+                console.log("No profiles found!");
+                infoDiv.innerText = 'No profiles found.';
+                return;
+            }
+
+            resp.results.forEach(function (profile) {
+                var person = profile.person; // 응답 구조에서 person 객체를 참조
+                var profileInfo = document.createElement('P');
+                var name = person.names ? person.names[0].displayName : 'No Name';
+
+                // 이름 출력
+                var nameText = document.createTextNode(name);
+                profileInfo.appendChild(nameText);
+
+                // 프로필 사진 출력 (사진이 있을 때만 처리)
+                if (person.photos && person.photos.length > 0) {
+                    var profilePic = document.createElement('IMG');
+                    profilePic.src = person.photos[0].url;
+                    profilePic.style.width = '50px';
+                    profilePic.style.height = '50px';
+                    profileInfo.appendChild(profilePic);
+                }
+
+                infoDiv.appendChild(profileInfo);
+            });
+        }
+
+        window.onload = fetchSecrets;
+
+    </script>
+
+    <script src="https://accounts.google.com/gsi/client" async defer></script> <!-- GIS 라이브러리 추가 -->
+    <script src="https://apis.google.com/js/api.js"></script>
+</head>
+
+<body>
+    <h1>Google People API Search</h1>
+    <!-- Authorize and sign out buttons -->
+    <button id="authorize_button" style="display: none;" onclick="handleAuthClick();">Authorize</button>
+    <button id="signout_button" style="display: none;" onclick="handleSignoutClick();">Sign out</button>
+
+    <!-- Search fields (displayed after authorization) -->
     <div id="queryFields" style="display:none;">
-      <label for="query">Query </label>
-      <input id="query" type="text" />
-      <button onclick="makeRequest();">
-        Search Google+ Profiles
-      </button>
+        <label for="query">Query </label>
+        <input id="query" type="text" />
+        <button onclick="makeRequest();">Search Contacts</button>
     </div>
+
     <div id="info"></div>
-  </body>
+</body>
 </html>
